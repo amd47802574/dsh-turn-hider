@@ -7,15 +7,22 @@
  * 重开、换窗口之后继续生效，随时可以在面板里逐条或全部恢复。
  *
  * 交互：
- *  - 鼠标悬停任意一轮的行 → 行右上角浮出「隐藏此轮」按钮；
- *  - 点击即隐藏，底部弹提示（带撤销）；
- *  - 右下角常驻小徽标「已隐藏 N 轮」→ 点开管理面板：逐条恢复 / 全部恢复。
+ *  - 消息下方那排图标（复制 / 点赞 / 点踩 / 摘要 / 分享 / 时间）末尾多一个
+ *    「垃圾桶」按钮 —— 点它就隐藏这一整轮；
+ *  - 隐藏后底部弹提示（带撤销）；
+ *  - 右下角常驻小徽标「已隐藏 N 轮」→ 打开管理面板：逐条恢复 / 全部恢复。
  *
  * 行 → 轮 的判定（多层兜底，任何一层命中即止）：
  *  1. 行自带标记：data-chat-turn / data-turn-tail / data-turn-process；
  *  2. React fiber props：routedNode.location.turn.turn，或组件的 turn prop；
  *  3. 行类型启发：data-chat-flow-kind 含 assistant → 归上一组，含 user/input → 归下一组；
  *  4. 顺序兜底：夹在两组之间的未知行归入后一组（下一轮的输入行），只有前组的归前组。
+ *
+ * 垃圾桶按钮的落点：注入进 MessageIconActions 渲染的图标行（div[data-clock]）。
+ * 该行以 data-clock 区分用户消息（clock=start，时间在左）与 AI 回复（clock=end，
+ * 时间在右）。end 行插进行尾的 endInfo 容器、放在时间文字之前；start 行追加到
+ * 图标序列末尾。按钮本体克隆自同行的复制按钮（类名与尺寸完全一致），
+ * 图标换成垃圾桶线稿；每次扫描检查是否被 React 重渲染移除，缺了就补。
  */
 
 window.__ModuleLoader__.load({
@@ -27,11 +34,15 @@ window.__ModuleLoader__.load({
     const STORE_KEY = NS + ":hidden:v1";
     const HIDDEN_ATTR = "data-dth-hidden";
     const TURN_ATTR = "data-dth-turn";
+    const TRASH_ATTR = "data-dth-trash-btn";
+
+    const TRASH_SVG =
+      "<svg width=\"16\" height=\"16\" viewBox=\"0 0 20 20\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">" +
+      "<path d=\"M7 3.2h6M4.2 5.4h11.6M8.1 8.2v5.4M11.9 8.2v5.4M5.6 5.4l.75 9.1a1.6 1.6 0 0 0 1.6 1.5h4.1a1.6 1.6 0 0 0 1.6-1.5l.75-9.1\" " +
+      "stroke=\"currentColor\" stroke-width=\"1.25\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>";
 
     const CSS = [
       "#dsh-turn-hider-root{position:fixed;inset:auto;z-index:2147483000;font:13px/1.5 -apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif}",
-      ".dth-hover-btn{position:fixed;display:none;z-index:2147483001;align-items:center;padding:3px 10px;border-radius:8px;border:1px solid rgba(127,127,127,.35);background:var(--dsw-alias-bg-layer-2,#1b1d21);color:var(--dsw-alias-label-primary,#e6e6e6);font:inherit;font-size:12px;line-height:18px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.25)}",
-      ".dth-hover-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.18))}",
       ".dth-chip{position:fixed;right:18px;bottom:18px;z-index:2147483000;display:none;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:1px solid rgba(127,127,127,.3);background:var(--dsw-alias-bg-layer-2,#1b1d21);color:var(--dsw-alias-label-secondary,#a8adb7);font:inherit;font-size:12px;line-height:18px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.22)}",
       ".dth-chip:hover{color:var(--dsw-alias-label-primary,#e6e6e6)}",
       ".dth-panel{position:fixed;right:18px;bottom:58px;width:350px;max-width:calc(100vw - 36px);max-height:min(62vh,560px);display:none;flex-direction:column;border-radius:14px;border:1px solid rgba(127,127,127,.28);background:var(--dsw-alias-bg-layer-1,#f7f8fa);color:var(--dsw-alias-label-primary,#e6e6e6);box-shadow:0 10px 34px rgba(0,0,0,.3);overflow:hidden}",
@@ -53,13 +64,14 @@ window.__ModuleLoader__.load({
       ".dth-foot-btn:disabled{opacity:.4;cursor:not-allowed}",
       ".dth-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);display:none;align-items:center;gap:10px;padding:9px 16px;border-radius:10px;border:1px solid rgba(127,127,127,.3);background:var(--dsw-alias-bg-layer-2,#1b1d21);color:var(--dsw-alias-label-primary,#e6e6e6);box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:2147483002;font-size:12.5px}",
       ".dth-toast-btn{border:none;background:transparent;color:var(--dsw-alias-state-business-primary,#4a8cff);font:inherit;font-size:12.5px;cursor:pointer;padding:0}",
+      ".dth-trash{cursor:pointer}",
       "[" + HIDDEN_ATTR + "=1]{display:none !important}",
     ].join("\n");
 
     // ---------- 状态 ----------
     let uiSession = null;
     let rootEl = null, chipEl = null, panelEl = null, panelListEl = null;
-    let panelRestoreAllBtn = null, hoverBtn = null, toastEl = null, toastUndoBtn = null;
+    let panelRestoreAllBtn = null, toastEl = null, toastUndoBtn = null;
     let panelOpen = false, toastTimer = 0, toastUndo = null;
 
     // ---------- localStorage ----------
@@ -167,7 +179,7 @@ window.__ModuleLoader__.load({
       return turns;
     }
 
-    // ---------- 扫描与隐藏 ----------
+    // ---------- 扫描、隐藏、注入垃圾桶 ----------
     function scanAndApply() {
       const container = flowContainer();
       if (!container) { updateChip(); return; }
@@ -186,7 +198,69 @@ window.__ModuleLoader__.load({
           row.removeAttribute(HIDDEN_ATTR);
         }
       }
+      injectTrashButtons();
       updateChip();
+    }
+    function injectTrashButtons() {
+      const actionRows = document.querySelectorAll("div[data-clock]");
+      for (const actions of actionRows) {
+        if (actions.querySelector("[" + TRASH_ATTR + "]")) continue;
+        const host = actions.closest("[" + TURN_ATTR + "]");
+        if (!host || host.getAttribute(HIDDEN_ATTR) === "1") continue;
+        const turn = toTurn(host.getAttribute(TURN_ATTR));
+        if (turn === null) continue;
+        const button = buildTrashButton(turn);
+        const clock = actions.getAttribute("data-clock");
+        if (clock === "end") {
+          const endInfo = actions.lastElementChild;
+          if (endInfo && endInfo !== button) {
+            const timeEl = findTimeElement(endInfo);
+            if (timeEl) endInfo.insertBefore(button, timeEl);
+            else endInfo.appendChild(button);
+          } else {
+            actions.appendChild(button);
+          }
+        } else {
+          actions.appendChild(button);
+        }
+      }
+    }
+    function findTimeElement(endInfo) {
+      for (const child of endInfo.children) {
+        const text = (child.textContent || "").trim();
+        if (/^\d{1,2}[:：]/.test(text)) return child;
+      }
+      return null;
+    }
+    function buildTrashButton(turn) {
+      let button = null;
+      const sample = document.querySelector("div[data-clock] button");
+      if (sample) {
+        button = sample.cloneNode(false);
+        while (button.firstChild) button.removeChild(button.firstChild);
+        button.removeAttribute("aria-label");
+        button.removeAttribute("aria-describedby");
+        button.removeAttribute("data-unavailable");
+        button.removeAttribute("id");
+      } else {
+        button = document.createElement("button");
+        button.type = "button";
+        button.className = "dth-trash-fallback";
+      }
+      button.type = "button";
+      button.setAttribute(TRASH_ATTR, "1");
+      button.setAttribute("aria-label", "隐藏此轮");
+      button.setAttribute("title", "隐藏此轮（仅显示层，可恢复）");
+      button.classList.add("dth-trash");
+      button.innerHTML = TRASH_SVG;
+      button.__dthTurn = turn;
+      button.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        const t = button.__dthTurn;
+        if (t !== null && t !== undefined) hideTurn(t);
+      });
+      return button;
     }
     function membersOf(turn) {
       const container = flowContainer();
@@ -233,16 +307,6 @@ window.__ModuleLoader__.load({
       rootEl = el("div");
       rootEl.id = "dsh-turn-hider-root";
 
-      hoverBtn = el("button", "dth-hover-btn", "隐藏此轮");
-      hoverBtn.type = "button";
-      hoverBtn.__dthTurn = null;
-      hoverBtn.addEventListener("click", function (ev) {
-        ev.stopPropagation();
-        const turn = hoverBtn.__dthTurn;
-        hideHover();
-        if (turn !== null && turn !== undefined) hideTurn(turn);
-      });
-
       chipEl = el("button", "dth-chip", "轮次隐藏");
       chipEl.type = "button";
       chipEl.title = "dsh-turn-hider：管理本会话已隐藏的轮次";
@@ -282,7 +346,6 @@ window.__ModuleLoader__.load({
       toastEl.appendChild(el("span", "dth-toast-msg"));
       toastEl.appendChild(toastUndoBtn);
 
-      rootEl.appendChild(hoverBtn);
       rootEl.appendChild(chipEl);
       rootEl.appendChild(panelEl);
       rootEl.appendChild(toastEl);
@@ -310,7 +373,8 @@ window.__ModuleLoader__.load({
         .sort(function (a, b) { return b.turn - a.turn; });
       panelListEl.textContent = "";
       if (!entries.length) {
-        panelListEl.appendChild(el("div", "dth-empty", "这个会话还没有隐藏任何轮次。\n悬停某轮对话，点右上角「隐藏此轮」。"));
+        const empty = el("div", "dth-empty", "这个会话还没有隐藏任何轮次。点消息图标行末尾的垃圾桶按钮即可隐藏该轮。");
+        panelListEl.appendChild(empty);
       }
       for (const it of entries) {
         const item = el("div", "dth-item");
@@ -341,24 +405,6 @@ window.__ModuleLoader__.load({
       toastUndo = null;
       if (toastTimer) { window.clearTimeout(toastTimer); toastTimer = 0; }
     }
-    function hideHover() {
-      if (hoverBtn) hoverBtn.style.display = "none";
-      if (hoverBtn) hoverBtn.__dthTurn = null;
-    }
-    function onOver(e) {
-      const target = e.target;
-      if (!target || typeof target.closest !== "function") return;
-      const row = target.closest("[" + TURN_ATTR + "]");
-      if (!row || row.getAttribute(HIDDEN_ATTR) === "1") { hideHover(); return; }
-      const turn = toTurn(row.getAttribute(TURN_ATTR));
-      if (turn === null) { hideHover(); return; }
-      const rect = row.getBoundingClientRect();
-      if (rect.bottom < 40 || rect.top > window.innerHeight - 40) { hideHover(); return; }
-      hoverBtn.__dthTurn = turn;
-      hoverBtn.style.display = "flex";
-      hoverBtn.style.top = Math.max(8, Math.min(rect.top + 6, window.innerHeight - 44)) + "px";
-      hoverBtn.style.left = Math.max(8, Math.min(rect.right - 86, window.innerWidth - 104)) + "px";
-    }
 
     return {
       inject: ["uiSession"],
@@ -372,9 +418,6 @@ window.__ModuleLoader__.load({
         style.textContent = CSS;
         (document.head || document.documentElement).appendChild(style);
         buildUI();
-
-        document.addEventListener("mouseover", onOver, true);
-        document.addEventListener("scroll", hideHover, true);
 
         let scheduled = false;
         const observer = new MutationObserver(function () {
@@ -396,8 +439,6 @@ window.__ModuleLoader__.load({
           return function () {
             observer.disconnect();
             window.clearInterval(timer);
-            document.removeEventListener("mouseover", onOver, true);
-            document.removeEventListener("scroll", hideHover, true);
             try { rootEl.remove(); } catch (e) { /* 已被移除 */ }
             try { style.remove(); } catch (e) { /* 已被移除 */ }
             window.__DSH_TURN_HIDER__ = false;
