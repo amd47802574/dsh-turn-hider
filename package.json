@@ -1,0 +1,47 @@
+{
+  "name": "dsh-turn-hider",
+  "version": "0.1.0",
+  "description": "隐藏会话中的任意一轮（用户消息 + AI 回复 + 工具过程）：仅前端展示层，会话日志一概不动，随时可恢复 / Hide any chat turn from the transcript view only - session logs stay untouched",
+  "type": "module",
+  "main": "host.js",
+  "exports": {
+    ".": "./host.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "host.js",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "turn",
+    "hide",
+    "transcript"
+  ],
+  "license": "MIT",
+  "author": "amd47802574",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amd47802574/dsh-turn-hider.git"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ]
+    }
+  }
+}

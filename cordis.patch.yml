@@ -1,0 +1,6 @@
+# dsh-turn-hider：宿主挂载锚点行。
+# 能力在浏览器端 client.js —— 由 package.json 的 dsh.client 声明被发现加载，
+# 这里只负责让宿主侧的空服务（host.js）随 bundle 层挂上，便于确认安装生效。
+- insert:
+    - id: turn-hider
+      name: 'dsh-turn-hider'
