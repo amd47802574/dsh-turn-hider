@@ -12,17 +12,12 @@
  *  - 隐藏后底部弹提示（带撤销）；
  *  - 右下角常驻小徽标「已隐藏 N 轮」→ 打开管理面板：逐条恢复 / 全部恢复。
  *
- * 行 → 轮 的判定（多层兜底，任何一层命中即止）：
- *  1. 行自带标记：data-chat-turn / data-turn-tail / data-turn-process；
- *  2. React fiber props：routedNode.location.turn.turn，或组件的 turn prop；
- *  3. 行类型启发：data-chat-flow-kind 含 assistant → 归上一组，含 user/input → 归下一组；
- *  4. 顺序兜底：夹在两组之间的未知行归入后一组（下一轮的输入行），只有前组的归前组。
- *
- * 垃圾桶按钮的落点：注入进 MessageIconActions 渲染的图标行（div[data-clock]）。
- * 该行以 data-clock 区分用户消息（clock=start，时间在左）与 AI 回复（clock=end，
- * 时间在右）。end 行插进行尾的 endInfo 容器、放在时间文字之前；start 行追加到
- * 图标序列末尾。按钮本体克隆自同行的复制按钮（类名与尺寸完全一致），
- * 图标换成垃圾桶线稿；每次扫描检查是否被 React 重渲染移除，缺了就补。
+ * 分块模型（v0.1.1）：一轮 = 「一条用户消息」到「下一条用户消息」之前的所有
+ * 流行（seat）。以行内的图标行 data-clock 识别用户消息（clock=start）与
+ * AI 回复（clock=end）；块内任何一行带 data-chat-turn / data-turn-tail /
+ * data-turn-process 直接标记时优先采用其轮号，否则用 fiber props
+ * （routedNode.location.turn.turn / props.turn），都没有就按用户消息序号计数。
+ * 这样块与块的边界只取决于用户消息序列，跨刷新稳定，也不再依赖位置启发。
  */
 
 window.__ModuleLoader__.load({
@@ -35,6 +30,7 @@ window.__ModuleLoader__.load({
     const HIDDEN_ATTR = "data-dth-hidden";
     const TURN_ATTR = "data-dth-turn";
     const TRASH_ATTR = "data-dth-trash-btn";
+    const SEAT_ATTR = "data-chat-flow-key";
 
     const TRASH_SVG =
       "<svg width=\"16\" height=\"16\" viewBox=\"0 0 20 20\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">" +
@@ -65,7 +61,7 @@ window.__ModuleLoader__.load({
       ".dth-toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);display:none;align-items:center;gap:10px;padding:9px 16px;border-radius:10px;border:1px solid rgba(127,127,127,.3);background:var(--dsw-alias-bg-layer-2,#1b1d21);color:var(--dsw-alias-label-primary,#e6e6e6);box-shadow:0 8px 24px rgba(0,0,0,.3);z-index:2147483002;font-size:12.5px}",
       ".dth-toast-btn{border:none;background:transparent;color:var(--dsw-alias-state-business-primary,#4a8cff);font:inherit;font-size:12.5px;cursor:pointer;padding:0}",
       ".dth-trash{cursor:pointer}",
-      "[" + HIDDEN_ATTR + "=1]{display:none !important}",
+      "[" + HIDDEN_ATTR + "='1']{display:none !important}",
     ].join("\n");
 
     // ---------- 状态 ----------
@@ -113,15 +109,18 @@ window.__ModuleLoader__.load({
       return m ? "session-" + m[0] : "__page__";
     }
 
-    // ---------- 行 → 轮 ----------
-    function flowContainer() {
-      const anyGroup = document.querySelector("[" + TURN_ATTR + "],[data-chat-turn]");
-      return anyGroup ? anyGroup.parentElement : null;
+    // ---------- DOM 结构 ----------
+    function seatRowOf(el) {
+      return el && el.closest ? el.closest("[" + SEAT_ATTR + "]") : null;
     }
-    function rowsOf(container) {
-      const rows = [];
-      for (const el of container.children) if (el && el.nodeType === 1) rows.push(el);
-      return rows;
+    function flowContainer() {
+      const clockRow = document.querySelector("div[data-clock]");
+      const seat = seatRowOf(clockRow);
+      if (seat && seat.parentElement) return seat.parentElement;
+      const anySeat = document.querySelector("[" + SEAT_ATTR + "]");
+      if (anySeat && anySeat.parentElement) return anySeat.parentElement;
+      const group = document.querySelector("[data-chat-turn]");
+      return group ? group.parentElement : null;
     }
     function toTurn(value) {
       const n = Number(value);
@@ -131,6 +130,11 @@ window.__ModuleLoader__.load({
       if (row.hasAttribute("data-chat-turn")) return toTurn(row.getAttribute("data-chat-turn"));
       if (row.hasAttribute("data-turn-tail")) return toTurn(row.getAttribute("data-turn-tail"));
       if (row.hasAttribute("data-turn-process")) return toTurn(row.getAttribute("data-turn-process"));
+      const inner = row.querySelector("[data-chat-turn],[data-turn-tail],[data-turn-process]");
+      if (inner) {
+        const t = toTurn(inner.getAttribute("data-chat-turn") || inner.getAttribute("data-turn-tail") || inner.getAttribute("data-turn-process"));
+        if (t !== null) return t;
+      }
       return null;
     }
     function fiberTurn(row) {
@@ -139,7 +143,7 @@ window.__ModuleLoader__.load({
         if (!fk) return null;
         let fiber = row[fk];
         let depth = 0;
-        while (fiber && depth < 30) {
+        while (fiber && depth < 40) {
           const props = fiber.memoizedProps;
           if (props && typeof props === "object") {
             if (typeof props.turn === "number") return props.turn;
@@ -150,52 +154,75 @@ window.__ModuleLoader__.load({
           fiber = fiber.return;
           depth += 1;
         }
-      } catch (e) { /* fiber 不可用时走启发 */ }
+      } catch (e) { /* fiber 不可用时按用户消息序号 */ }
       return null;
     }
-    function assignTurns(rows) {
-      const turns = new Array(rows.length).fill(null);
-      for (let i = 0; i < rows.length; i++) {
-        const t = directTurn(rows[i]);
-        turns[i] = t !== null ? t : fiberTurn(rows[i]);
+    function isUserRow(row) {
+      return !!row.querySelector("div[data-clock='start']");
+    }
+
+    /**
+     * 把流行切成轮次块：一条用户消息开一块，到下一条用户消息之前为止；
+     * 首条用户消息之前的行归入第一块，最后一块吃到结尾。
+     * 每块的轮号：块内直接标记 > 块内用户行的 fiber > 用户消息序号。
+     */
+    function analyze() {
+      const container = flowContainer();
+      if (!container) return null;
+      const rows = [];
+      for (const el of container.children) {
+        if (el && el.nodeType === 1 && el.hasAttribute(SEAT_ATTR)) rows.push(el);
       }
+      if (!rows.length) return null;
+      const userFlags = rows.map(isUserRow);
+      let ordinal = 0;
+      const blocks = [];
+      let current = null;
+      const preFirst = [];
       for (let i = 0; i < rows.length; i++) {
-        if (turns[i] !== null) continue;
-        const kind = rows[i].getAttribute("data-chat-flow-kind") || "";
-        if (/assistant|reply/i.test(kind)) {
-          for (let j = i - 1; j >= 0; j--) if (turns[j] !== null) { turns[i] = turns[j]; break; }
-        } else if (/user|input|trigger/i.test(kind)) {
-          for (let j = i + 1; j < rows.length; j++) if (turns[j] !== null) { turns[i] = turns[j]; break; }
+        const row = rows[i];
+        if (userFlags[i]) {
+          ordinal += 1;
+          let turn = directTurn(row);
+          if (turn === null) turn = fiberTurn(row);
+          if (turn === null) turn = ordinal;
+          current = { turn: turn, rows: [row] };
+          blocks.push(current);
+          continue;
         }
+        if (current) current.rows.push(row);
+        else preFirst.push(row);
       }
-      for (let i = 0; i < rows.length; i++) {
-        if (turns[i] !== null) continue;
-        let prev = null, next = null;
-        for (let j = i - 1; j >= 0; j--) if (turns[j] !== null) { prev = turns[j]; break; }
-        for (let j = i + 1; j < rows.length; j++) if (turns[j] !== null) { next = turns[j]; break; }
-        if (prev !== null && next !== null) turns[i] = next;
-        else turns[i] = prev !== null ? prev : next;
+      if (blocks.length && preFirst.length) {
+        const first = blocks[0];
+        first.rows = preFirst.concat(first.rows);
       }
-      return turns;
+      for (const block of blocks) {
+        if (block.turn === null) continue;
+        let direct = null;
+        for (const row of block.rows) {
+          direct = directTurn(row);
+          if (direct !== null) break;
+        }
+        if (direct !== null && direct !== block.turn) block.turn = direct;
+      }
+      return { container: container, blocks: blocks };
     }
 
     // ---------- 扫描、隐藏、注入垃圾桶 ----------
     function scanAndApply() {
-      const container = flowContainer();
-      if (!container) { updateChip(); return; }
-      const rows = rowsOf(container);
-      const turns = assignTurns(rows);
+      const view = analyze();
+      if (!view) { updateChip(); return; }
       const hidden = hiddenMap(sessionId());
-      for (let i = 0; i < rows.length; i++) {
-        const turn = turns[i];
-        if (turn === null) continue;
-        const row = rows[i];
-        if (row.getAttribute(TURN_ATTR) !== String(turn)) row.setAttribute(TURN_ATTR, String(turn));
-        const want = hidden[String(turn)] ? "1" : null;
-        if (want) {
-          if (row.getAttribute(HIDDEN_ATTR) !== "1") row.setAttribute(HIDDEN_ATTR, "1");
-        } else if (row.getAttribute(HIDDEN_ATTR) === "1") {
-          row.removeAttribute(HIDDEN_ATTR);
+      for (const block of view.blocks) {
+        const want = hidden[String(block.turn)] ? "1" : null;
+        for (const row of block.rows) {
+          if (row.getAttribute(TURN_ATTR) !== String(block.turn)) row.setAttribute(TURN_ATTR, String(block.turn));
+          if (want) {
+            if (row.getAttribute(HIDDEN_ATTR) !== "1") row.setAttribute(HIDDEN_ATTR, "1");
+          } else if (row.getAttribute(HIDDEN_ATTR) === "1") {
+            row.removeAttribute(HIDDEN_ATTR);
+          }
         }
       }
       injectTrashButtons();
@@ -213,7 +240,7 @@ window.__ModuleLoader__.load({
         const clock = actions.getAttribute("data-clock");
         if (clock === "end") {
           const endInfo = actions.lastElementChild;
-          if (endInfo && endInfo !== button) {
+          if (endInfo && endInfo !== button && endInfo.tagName === "SPAN") {
             const timeEl = findTimeElement(endInfo);
             if (timeEl) endInfo.insertBefore(button, timeEl);
             else endInfo.appendChild(button);
@@ -244,8 +271,6 @@ window.__ModuleLoader__.load({
         button.removeAttribute("id");
       } else {
         button = document.createElement("button");
-        button.type = "button";
-        button.className = "dth-trash-fallback";
       }
       button.type = "button";
       button.setAttribute(TRASH_ATTR, "1");
@@ -263,13 +288,12 @@ window.__ModuleLoader__.load({
       return button;
     }
     function membersOf(turn) {
-      const container = flowContainer();
-      if (!container) return [];
-      const rows = rowsOf(container);
-      const turns = assignTurns(rows);
-      const members = [];
-      for (let i = 0; i < rows.length; i++) if (turns[i] === turn) members.push(rows[i]);
-      return members;
+      const view = analyze();
+      if (!view) return [];
+      for (const block of view.blocks) {
+        if (block.turn === turn) return block.rows;
+      }
+      return [];
     }
     function hideTurn(turn) {
       const sid = sessionId();
