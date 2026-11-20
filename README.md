@@ -1,7 +1,7 @@
 # dsh-turn-hider
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.2-blue.svg)](https://github.com/amd47802574/dsh-turn-hider/releases)
+[![Version](https://img.shields.io/badge/version-0.1.3-blue.svg)](https://github.com/amd47802574/dsh-turn-hider/releases)
 [![Platform](https://img.shields.io/badge/platform-DSH%20Web%20%2F%20Desktop-8b5cf6.svg)](#compatibility)
 [![Type](https://img.shields.io/badge/type-client--only%20plugin-22c55e.svg)](#how-it-works)
 
