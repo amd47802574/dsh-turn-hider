@@ -10,7 +10,8 @@
  *  - 消息下方那排图标（复制 / 点赞 / 点踩 / 摘要 / 分享 / 时间）末尾多一个
  *    「垃圾桶」按钮 —— 点它就隐藏这一整轮；
  *  - 隐藏后底部弹提示（带撤销）；
- *  - 左下角常驻小徽标「已隐藏 N 轮」→ 打开管理面板：逐条恢复 / 全部恢复。
+ *  - 顶部标签栏（对话 / 上下文 / 编队 …）末尾多一个「轮次隐藏」标签 →
+ *    打开管理面板（贴标签正下方展开）：逐条恢复 / 全部恢复。
  *
  * 分块模型（v0.1.1）：一轮 = 「一条用户消息」到「下一条用户消息」之前的所有
  * 流行（seat）。以行内的图标行 data-clock 识别用户消息（clock=start）与
@@ -41,7 +42,11 @@ window.__ModuleLoader__.load({
       "#dsh-turn-hider-root{position:fixed;inset:auto;z-index:2147483000;font:13px/1.5 -apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif}",
       ".dth-chip{position:fixed;left:18px;bottom:18px;z-index:2147483000;display:none;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:1px solid rgba(127,127,127,.3);background:var(--dsw-alias-bg-layer-2,#1b1d21);color:var(--dsw-alias-label-secondary,#a8adb7);font:inherit;font-size:12px;line-height:18px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.22)}",
       ".dth-chip:hover{color:var(--dsw-alias-label-primary,#e6e6e6)}",
-      ".dth-panel{position:fixed;left:18px;bottom:58px;width:350px;max-width:calc(100vw - 36px);max-height:min(62vh,560px);display:none;flex-direction:column;border-radius:14px;border:1px solid rgba(127,127,127,.28);background:var(--dsw-alias-bg-layer-1,#f7f8fa);color:var(--dsw-alias-label-primary,#e6e6e6);box-shadow:0 10px 34px rgba(0,0,0,.3);overflow:hidden}",
+      ".dth-tab-btn{cursor:pointer}",
+      ".dth-tab-btn.dth-open{font-weight:600}",
+      ".dth-tab-fallback{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary,#a8adb7);font:inherit;font-size:12.5px;line-height:18px;white-space:nowrap}",
+      ".dth-tab-fallback:hover{color:var(--dsw-alias-label-primary,#e6e6e6);background:var(--dsw-alias-interactive-bg-hover,rgba(127,127,127,.14))}",
+      ".dth-panel{position:fixed;left:18px;top:96px;width:350px;max-width:calc(100vw - 36px);max-height:min(62vh,560px);display:none;flex-direction:column;border-radius:14px;border:1px solid rgba(127,127,127,.28);background:var(--dsw-alias-bg-layer-1,#f7f8fa);color:var(--dsw-alias-label-primary,#e6e6e6);box-shadow:0 10px 34px rgba(0,0,0,.3);overflow:hidden}",
       ".dth-panel.dth-open{display:flex}",
       ".dth-panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;border-bottom:1px solid rgba(127,127,127,.18);font-weight:600;font-size:13px}",
       ".dth-panel-close{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:none;border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary,#a8adb7);cursor:pointer;font:inherit;font-size:15px;line-height:1}",
@@ -66,7 +71,7 @@ window.__ModuleLoader__.load({
 
     // ---------- 状态 ----------
     let uiSession = null;
-    let rootEl = null, chipEl = null, panelEl = null, panelListEl = null;
+    let rootEl = null, chipEl = null, tabEl = null, panelEl = null, panelListEl = null;
     let panelRestoreAllBtn = null, toastEl = null, toastUndoBtn = null;
     let panelOpen = false, toastTimer = 0, toastUndo = null;
 
@@ -378,15 +383,135 @@ window.__ModuleLoader__.load({
     }
     function setPanelOpen(next) {
       panelOpen = !!next;
+      if (tabEl) tabEl.classList.toggle("dth-open", panelOpen);
       if (panelEl) panelEl.classList.toggle("dth-open", panelOpen);
-      if (panelOpen) renderPanel();
+      if (panelOpen) {
+        positionPanel();
+        renderPanel();
+      }
+    }
+
+    /** 面板贴着「轮次隐藏」标签正下方展开；没有标签锚点时用 CSS 兜底位置。 */
+    function positionPanel() {
+      if (!panelEl) return;
+      if (!(tabEl && tabEl.isConnected)) {
+        panelEl.style.left = "";
+        panelEl.style.top = "";
+        return;
+      }
+      let left = 18, top = 96;
+      try {
+        const rect = tabEl.getBoundingClientRect();
+        if (rect && rect.width > 0) {
+          left = Math.max(12, Math.min(Math.round(rect.left), Math.round(window.innerWidth - 366)));
+          top = Math.max(12, Math.round(rect.bottom) + 8);
+        }
+      } catch (e) { /* 定位失败走兜底 */ }
+      panelEl.style.left = left + "px";
+      panelEl.style.top = top + "px";
     }
     function updateChip() {
-      if (!chipEl) return;
       const inChat = flowContainer() !== null;
+      if (!inChat) {
+        if (tabEl && tabEl.isConnected) tabEl.remove();
+        tabEl = null;
+        if (chipEl) chipEl.style.display = "none";
+        if (panelOpen && panelEl) panelEl.classList.remove("dth-open");
+        panelOpen = false;
+        return;
+      }
+      if (!tabEl || !tabEl.isConnected) {
+        const found = tabStrip();
+        if (found) {
+          tabEl = buildTabButton(found.cloneSample || found.sample);
+          // 插在标签栏末尾的「···」菜单之前；找不到图标菜单就追加到最后
+          let before = null;
+          for (const child of found.strip.children) {
+            const t = (child.textContent || "").trim();
+            if (!t && child.querySelector("svg")) { before = child; break; }
+          }
+          if (before && before.parentElement === found.strip) found.strip.insertBefore(tabEl, before);
+          else found.strip.appendChild(tabEl);
+        } else {
+          tabEl = null;
+        }
+      }
       const count = Object.keys(hiddenMap(sessionId())).length;
-      chipEl.style.display = inChat ? "flex" : "none";
-      chipEl.textContent = count > 0 ? "已隐藏 " + count + " 轮" : "轮次隐藏";
+      const text = count > 0 ? "轮次隐藏（" + count + "）" : "轮次隐藏";
+      if (tabEl) {
+        const labelNode = tabEl.__dthLabelNode;
+        if (labelNode) labelNode.textContent = text;
+        else tabEl.textContent = text;
+        if (chipEl) chipEl.style.display = "none";
+      } else if (chipEl) {
+        // 兜底：找不到标签栏时退回右下角小徽标，保证入口永远存在
+        chipEl.style.display = "flex";
+        chipEl.textContent = count > 0 ? "已隐藏 " + count + " 轮" : "轮次隐藏";
+      }
+    }
+
+    /**
+     * 顶部标签栏（「对话 / 上下文 / 编队 / 视频 / 统计 …」那一排）：找到文本
+     * 恰为「对话」的叶子节点，且其父级里还有「上下文 / 编队 / 统计」之一，
+     * 即认定是标签栏；并挑一个未选中的同类标签做克隆样本。
+     */
+    function tabStrip() {
+      const candidates = document.querySelectorAll("button,[role='tab'],a,div");
+      for (const node of candidates) {
+        if (node.childElementCount > 6) continue;
+        if ((node.textContent || "").trim() !== "对话") continue;
+        const parent = node.parentElement;
+        if (!parent) continue;
+        const sib = parent.textContent || "";
+        if (sib.indexOf("上下文") < 0 && sib.indexOf("编队") < 0 && sib.indexOf("统计") < 0) continue;
+        let cloneSample = null;
+        for (const child of parent.children) {
+          const t = (child.textContent || "").trim();
+          if (t === "统计" || t === "视频" || t === "上下文" || t === "编队") { cloneSample = child; break; }
+        }
+        return { strip: parent, sample: node, cloneSample: cloneSample };
+      }
+      return null;
+    }
+
+    /** 克隆一个原生标签做「轮次隐藏」入口：外观与真标签一致，但不接 React 事件。 */
+    function buildTabButton(sample) {
+      let button = null;
+      let want = "";
+      if (sample) {
+        button = sample.cloneNode(true);
+        want = (sample.textContent || "").trim();
+        button.removeAttribute("id");
+        button.removeAttribute("aria-controls");
+        button.removeAttribute("aria-selected");
+        button.removeAttribute("aria-expanded");
+        button.removeAttribute("data-unavailable");
+      } else {
+        button = document.createElement("button");
+        button.type = "button";
+        button.classList.add("dth-tab-fallback");
+      }
+      button.classList.add("dth-tab-btn");
+      button.setAttribute("data-dth-tab", "1");
+      button.setAttribute("aria-label", "轮次隐藏");
+      button.setAttribute("title", "dsh-turn-hider：管理本会话已隐藏的轮次");
+      let labelNode = null;
+      if (want) {
+        const walker = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
+        let cur;
+        while ((cur = walker.nextNode())) {
+          if ((cur.textContent || "").trim() === want) { labelNode = cur; break; }
+        }
+      }
+      if (labelNode) labelNode.textContent = "轮次隐藏";
+      else button.textContent = "轮次隐藏";
+      button.__dthLabelNode = labelNode;
+      button.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        ev.preventDefault();
+        setPanelOpen(!panelOpen);
+      });
+      return button;
     }
     function renderPanel() {
       if (!panelListEl) return;
@@ -463,6 +588,7 @@ window.__ModuleLoader__.load({
           return function () {
             observer.disconnect();
             window.clearInterval(timer);
+            try { if (tabEl) tabEl.remove(); } catch (e) { /* 已被移除 */ }
             try { rootEl.remove(); } catch (e) { /* 已被移除 */ }
             try { style.remove(); } catch (e) { /* 已被移除 */ }
             window.__DSH_TURN_HIDER__ = false;
