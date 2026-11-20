@@ -1,7 +1,7 @@
 # dsh-turn-hider
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.1.1-blue.svg)](https://github.com/amd47802574/dsh-turn-hider/releases)
+[![Version](https://img.shields.io/badge/version-0.1.2-blue.svg)](https://github.com/amd47802574/dsh-turn-hider/releases)
 [![Platform](https://img.shields.io/badge/platform-DSH%20Web%20%2F%20Desktop-8b5cf6.svg)](#compatibility)
 [![Type](https://img.shields.io/badge/type-client--only%20plugin-22c55e.svg)](#how-it-works)
 
@@ -70,7 +70,7 @@ the in-app store search.
    `copy 👍 👎 summary share 🗑 22:53` — the trash sits right before the clock;
 3. Click **🗑** → the whole turn (user message + reply + tool process) vanishes
    and a toast with **撤销 / Undo** appears for 6 seconds;
-4. Click the badge at the bottom-right (**已隐藏 N 轮**) to open the panel:
+4. Click the badge at the top-right (**已隐藏 N 轮**) to open the panel:
    - each row shows the turn number + first line preview + a **恢复 / Restore** button;
    - **全部恢复 / Restore all** clears the session's hidden list at once.
 

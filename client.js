@@ -10,7 +10,7 @@
  *  - 消息下方那排图标（复制 / 点赞 / 点踩 / 摘要 / 分享 / 时间）末尾多一个
  *    「垃圾桶」按钮 —— 点它就隐藏这一整轮；
  *  - 隐藏后底部弹提示（带撤销）；
- *  - 右下角常驻小徽标「已隐藏 N 轮」→ 打开管理面板：逐条恢复 / 全部恢复。
+ *  - 右上角常驻小徽标「已隐藏 N 轮」→ 打开管理面板：逐条恢复 / 全部恢复。
  *
  * 分块模型（v0.1.1）：一轮 = 「一条用户消息」到「下一条用户消息」之前的所有
  * 流行（seat）。以行内的图标行 data-clock 识别用户消息（clock=start）与
@@ -39,9 +39,9 @@ window.__ModuleLoader__.load({
 
     const CSS = [
       "#dsh-turn-hider-root{position:fixed;inset:auto;z-index:2147483000;font:13px/1.5 -apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif}",
-      ".dth-chip{position:fixed;right:18px;bottom:18px;z-index:2147483000;display:none;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:1px solid rgba(127,127,127,.3);background:var(--dsw-alias-bg-layer-2,#1b1d21);color:var(--dsw-alias-label-secondary,#a8adb7);font:inherit;font-size:12px;line-height:18px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.22)}",
+      ".dth-chip{position:fixed;right:18px;top:18px;z-index:2147483000;display:none;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:1px solid rgba(127,127,127,.3);background:var(--dsw-alias-bg-layer-2,#1b1d21);color:var(--dsw-alias-label-secondary,#a8adb7);font:inherit;font-size:12px;line-height:18px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.22)}",
       ".dth-chip:hover{color:var(--dsw-alias-label-primary,#e6e6e6)}",
-      ".dth-panel{position:fixed;right:18px;bottom:58px;width:350px;max-width:calc(100vw - 36px);max-height:min(62vh,560px);display:none;flex-direction:column;border-radius:14px;border:1px solid rgba(127,127,127,.28);background:var(--dsw-alias-bg-layer-1,#f7f8fa);color:var(--dsw-alias-label-primary,#e6e6e6);box-shadow:0 10px 34px rgba(0,0,0,.3);overflow:hidden}",
+      ".dth-panel{position:fixed;right:18px;top:58px;width:350px;max-width:calc(100vw - 36px);max-height:min(62vh,560px);display:none;flex-direction:column;border-radius:14px;border:1px solid rgba(127,127,127,.28);background:var(--dsw-alias-bg-layer-1,#f7f8fa);color:var(--dsw-alias-label-primary,#e6e6e6);box-shadow:0 10px 34px rgba(0,0,0,.3);overflow:hidden}",
       ".dth-panel.dth-open{display:flex}",
       ".dth-panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;border-bottom:1px solid rgba(127,127,127,.18);font-weight:600;font-size:13px}",
       ".dth-panel-close{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:none;border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary,#a8adb7);cursor:pointer;font:inherit;font-size:15px;line-height:1}",
