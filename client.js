@@ -10,8 +10,7 @@
  *  - 消息下方那排图标（复制 / 点赞 / 点踩 / 摘要 / 分享 / 时间）末尾多一个
  *    「垃圾桶」按钮 —— 点它就隐藏这一整轮；
  *  - 隐藏后底部弹提示（带撤销）；
- *  - 聊天区右上角常驻小徽标「已隐藏 N 轮」（以聊天容器顶缘为锚，自动避开
- *    应用标题栏 / 工具栏）→ 打开管理面板：逐条恢复 / 全部恢复。
+ *  - 左下角常驻小徽标「已隐藏 N 轮」→ 打开管理面板：逐条恢复 / 全部恢复。
  *
  * 分块模型（v0.1.1）：一轮 = 「一条用户消息」到「下一条用户消息」之前的所有
  * 流行（seat）。以行内的图标行 data-clock 识别用户消息（clock=start）与
@@ -40,9 +39,9 @@ window.__ModuleLoader__.load({
 
     const CSS = [
       "#dsh-turn-hider-root{position:fixed;inset:auto;z-index:2147483000;font:13px/1.5 -apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif}",
-      ".dth-chip{position:fixed;right:18px;top:64px;z-index:2147483000;display:none;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:1px solid rgba(127,127,127,.3);background:var(--dsw-alias-bg-layer-2,#1b1d21);color:var(--dsw-alias-label-secondary,#a8adb7);font:inherit;font-size:12px;line-height:18px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.22)}",
+      ".dth-chip{position:fixed;left:18px;bottom:18px;z-index:2147483000;display:none;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:1px solid rgba(127,127,127,.3);background:var(--dsw-alias-bg-layer-2,#1b1d21);color:var(--dsw-alias-label-secondary,#a8adb7);font:inherit;font-size:12px;line-height:18px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.22)}",
       ".dth-chip:hover{color:var(--dsw-alias-label-primary,#e6e6e6)}",
-      ".dth-panel{position:fixed;right:18px;top:104px;width:350px;max-width:calc(100vw - 36px);max-height:min(62vh,560px);display:none;flex-direction:column;border-radius:14px;border:1px solid rgba(127,127,127,.28);background:var(--dsw-alias-bg-layer-1,#f7f8fa);color:var(--dsw-alias-label-primary,#e6e6e6);box-shadow:0 10px 34px rgba(0,0,0,.3);overflow:hidden}",
+      ".dth-panel{position:fixed;left:18px;bottom:58px;width:350px;max-width:calc(100vw - 36px);max-height:min(62vh,560px);display:none;flex-direction:column;border-radius:14px;border:1px solid rgba(127,127,127,.28);background:var(--dsw-alias-bg-layer-1,#f7f8fa);color:var(--dsw-alias-label-primary,#e6e6e6);box-shadow:0 10px 34px rgba(0,0,0,.3);overflow:hidden}",
       ".dth-panel.dth-open{display:flex}",
       ".dth-panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;border-bottom:1px solid rgba(127,127,127,.18);font-weight:600;font-size:13px}",
       ".dth-panel-close{flex:none;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:none;border-radius:7px;background:transparent;color:var(--dsw-alias-label-secondary,#a8adb7);cursor:pointer;font:inherit;font-size:15px;line-height:1}",
@@ -388,26 +387,6 @@ window.__ModuleLoader__.load({
       const count = Object.keys(hiddenMap(sessionId())).length;
       chipEl.style.display = inChat ? "flex" : "none";
       chipEl.textContent = count > 0 ? "已隐藏 " + count + " 轮" : "轮次隐藏";
-      if (inChat) layoutChrome();
-    }
-
-    /**
-     * 徽标贴聊天区右上角：以聊天容器（seat 列表的父级）顶缘为锚，
-     * 工具栏下缘 + 10px —— 桌面端带标题栏、浏览器端不带，都能自动避开；
-     * 探测失败时退回静态 64px 兜底。窗口变化由 resize 监听与 1.5s interval 重算。
-     */
-    function layoutChrome() {
-      if (!chipEl) return;
-      let top = 64; // DOM 探测失败时的静态兜底：典型标题栏 + 工具栏以下
-      try {
-        const view = flowContainer();
-        if (view) {
-          const rect = view.getBoundingClientRect();
-          if (rect && rect.height > 0 && rect.top >= 0) top = Math.max(12, Math.round(rect.top) + 10);
-        }
-      } catch (e) { /* 布局探测失败保持兜底值 */ }
-      chipEl.style.top = top + "px";
-      if (panelEl) panelEl.style.top = (top + 40) + "px"; // 徽标高约 30px + 10px 间距
     }
     function renderPanel() {
       if (!panelListEl) return;
@@ -474,9 +453,6 @@ window.__ModuleLoader__.load({
           }, 60);
         });
         observer.observe(document.documentElement, { childList: true, subtree: true });
-
-        const onResize = function () { try { updateChip(); } catch (e) { /* 忽略 */ } };
-        window.addEventListener("resize", onResize);
         try { scanAndApply(); } catch (e) { /* 首扫时页面可能还没有聊天区 */ }
 
         const timer = window.setInterval(function () {
@@ -486,7 +462,6 @@ window.__ModuleLoader__.load({
         ctx.effect(function () {
           return function () {
             observer.disconnect();
-            window.removeEventListener("resize", onResize);
             window.clearInterval(timer);
             try { rootEl.remove(); } catch (e) { /* 已被移除 */ }
             try { style.remove(); } catch (e) { /* 已被移除 */ }
